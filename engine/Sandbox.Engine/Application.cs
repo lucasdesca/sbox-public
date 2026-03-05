@@ -162,6 +162,12 @@ public static class Application
 #endif
 
 	/// <summary>
+	/// If set to false, the built-in microphone indicator overlay will be hidden.
+	/// Games can set this to false when they provide their own voice chat UI.
+	/// </summary>
+	public static bool ShowMicrophoneIndicator { get; set; } = true;
+
+	/// <summary>
 	/// Returns true if the microphone is currently listening
 	/// </summary>
 	public static bool IsMicrophoneListening => VoiceManager.IsListening;

@@ -38,6 +38,9 @@ public class Voice : Component
 	[Description( "Play the sound of your own voice" )]
 	[Property] public bool Loopback { get; set; } = false;
 
+	[Description( "Show the built-in microphone indicator overlay. Disable this if your game provides its own voice chat UI." )]
+	[Property] public bool ShowIndicator { get; set; } = true;
+
 	[Property, ToggleGroup( "LipSync", Label = "Lip Sync" )]
 	public bool LipSync { get; set; } = true;
 
@@ -148,6 +151,8 @@ public class Voice : Component
 
 	internal override void OnEnabledInternal()
 	{
+		Application.ShowMicrophoneIndicator = ShowIndicator;
+
 		VoiceManager.OnCompressedVoiceData += OnVoice;
 
 		soundStream = new SoundStream( VoiceManager.SampleRate );
@@ -163,6 +168,8 @@ public class Voice : Component
 	internal override void OnDisabledInternal()
 	{
 		base.OnDisabledInternal();
+
+		Application.ShowMicrophoneIndicator = true;
 
 		VoiceManager.OnCompressedVoiceData -= OnVoice;
 
