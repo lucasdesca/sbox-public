@@ -7,10 +7,6 @@ MODES
 
 CS 
 {
-    
-    #define XE_GTAO_USE_HALF_FLOAT_PRECISION 0 // dxc has a compiler bug doing dot products with half precision, unsure if much perf gain on desktop
-    #define XE_GTAO_FP32_DEPTHS 1
-    
     #include "common.fxc"
     #include "postprocess/shared.hlsl"
 
@@ -34,28 +30,26 @@ CS
     // input output textures for the first pass (XeGTAO_PrefilterDepths16x16)
 #if ( D_PASS == 0)
     Texture2DMS<float>           g_srcRawDepth           < Attribute("RawDepth"); > ;           // source depth buffer data (in NDC space in DirectX)
-    RWTexture2D<lpfloat>         g_outWorkingDepthMIP0   < Attribute("WorkingDepthMIP0"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
-    RWTexture2D<lpfloat>         g_outWorkingDepthMIP1   < Attribute("WorkingDepthMIP1"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
-    RWTexture2D<lpfloat>         g_outWorkingDepthMIP2   < Attribute("WorkingDepthMIP2"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
-    RWTexture2D<lpfloat>         g_outWorkingDepthMIP3   < Attribute("WorkingDepthMIP3"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
-    RWTexture2D<lpfloat>         g_outWorkingDepthMIP4   < Attribute("WorkingDepthMIP4"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
+    RWTexture2D<float>           g_outWorkingDepthMIP0   < Attribute("WorkingDepthMIP0"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
+    RWTexture2D<float>           g_outWorkingDepthMIP1   < Attribute("WorkingDepthMIP1"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
+    RWTexture2D<float>           g_outWorkingDepthMIP2   < Attribute("WorkingDepthMIP2"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
+    RWTexture2D<float>           g_outWorkingDepthMIP3   < Attribute("WorkingDepthMIP3"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
+    RWTexture2D<float>           g_outWorkingDepthMIP4   < Attribute("WorkingDepthMIP4"); > ;   // output viewspace depth MIP (these are views into g_srcWorkingDepth MIP levels)
     #endif
 
     // input output textures for the second pass (XeGTAO_MainPass)
-    Texture2D<lpfloat>           g_srcWorkingDepth       < Attribute("WorkingDepth"); > ;       // viewspace depth with MIPs, output by XeGTAO_PrefilterDepths16x16 and consumed by XeGTAO_MainPass
-    RWTexture2D<lpfloat>         g_outWorkingAOTerm      < Attribute("WorkingAOTerm"); > ;      // output AO term (includes bent normals if enabled - packed as R11G11B10 scaled by AO)
-    RWTexture2D<lpfloat>         g_outWorkingEdges       < Attribute("WorkingEdges"); > ;       // output depth-based edges used by the denoiser
+    Texture2D<float>             g_srcWorkingDepth       < Attribute("WorkingDepth"); > ;       // viewspace depth with MIPs, output by XeGTAO_PrefilterDepths16x16 and consumed by XeGTAO_MainPass
+    RWTexture2D<float>           g_outWorkingAOTerm      < Attribute("WorkingAOTerm"); > ;      // output AO term (includes bent normals if enabled - packed as R11G11B10 scaled by AO)
+    RWTexture2D<float>           g_outWorkingEdges       < Attribute("WorkingEdges"); > ;       // output depth-based edges used by the denoiser
 
     // input output textures for the third pass
     Texture2D                    g_srcWorkingAOTerm      < Attribute("WorkingAOTerm"); > ;    // coming from previous pass
-    Texture2D<lpfloat>           g_srcWorkingEdges       < Attribute("WorkingEdges"); > ; // coming from previous pass
-    RWTexture2D<lpfloat>         g_outAO                 < Attribute("FinalAOTerm"); >;         // final AO term - just 'visibility' or 'visibility + bent normals'
+    Texture2D<float>             g_srcWorkingEdges       < Attribute("WorkingEdges"); > ; // coming from previous pass
+    RWTexture2D<float>           g_outAO                 < Attribute("FinalAOTerm"); >;         // final AO term - just 'visibility' or 'visibility + bent normals'
     Texture2D                    g_prevAO                < Attribute("FinalAOTermPrev"); >;
 
     SamplerState                PointClamp               < Filter( POINT ); AddressU( CLAMP ); AddressV( CLAMP ); AddressW( CLAMP ); >;
     SamplerState                BilinearClamp            < Filter( MIN_MAG_MIP_LINEAR ); AddressU( CLAMP ); AddressV( CLAMP ); AddressW( CLAMP ); >;
-
-    Texture2D                   g_tBlueNoise             < Attribute( "BlueNoise" ); >;
 
     //-------------------------------------------------------------------------------------------------------------------
 
@@ -98,7 +92,7 @@ CS
     //-------------------------------------------------------------------------------------------------------------------
     lpfloat3 LoadNormal( int2 pos )
     {
-        lpfloat3 viewnormal = Vector3WsToVs( Normals::Sample( pos ) );
+        lpfloat3 viewnormal = (lpfloat3)Vector3WsToVs( Normals::Sample( pos ) );
         viewnormal.z = -viewnormal.z;
 
         return viewnormal;
@@ -121,26 +115,32 @@ CS
         }
         else if (D_PASS == GTAOPasses::MainPass )
         {
-            const lpfloat2 localNoise      = g_tBlueNoise[ ( vDispatchId.xy + ( sGTAOConsts.NoiseIndex * float2( 1325, 4125 ) ) ) % 128 ].xy; // Blue noise texture
+            // Hilbert R2 quasi-random sequence for spatiotemporal noise (better than blue noise for this use case)
+            // See: https://www.shadertoy.com/view/3tB3z3, https://github.com/GameTechDev/XeGTAO
+            uint hilbertIndex = HilbertIndex( vDispatchId.x, vDispatchId.y );
+            hilbertIndex += 288 * ( sGTAOConsts.NoiseIndex % 64 ); // 288 found empirically for best results with XE_HILBERT_LEVEL 6
+            const lpfloat2 localNoise = lpfloat2( frac( 0.5 + hilbertIndex * float2( 0.75487766624669276005, 0.5698402909980532659114 ) ) );
             const lpfloat3 viewspaceNormal = LoadNormal( vDispatchId.xy );
 
             lpfloat sliceCount;
             lpfloat stepsPerSlice;
 
+            // Sample counts matched to reference XeGTAO implementation
+            // Lower counts are compensated by better noise (Hilbert R2) and temporal denoising
             if (D_QUALITY == 0) 
             {
-                sliceCount = 3; // Low quality
-                stepsPerSlice = 3;
+                sliceCount = 1; // Low quality
+                stepsPerSlice = 2;
             } 
             else if (D_QUALITY == 1) 
             {
-                sliceCount = 4; // Medium quality
-                stepsPerSlice = 4;
+                sliceCount = 2; // Medium quality
+                stepsPerSlice = 2;
             }
             else if (D_QUALITY == 2) 
             {
-                sliceCount = 7; // High quality
-                stepsPerSlice = 7;
+                sliceCount = 3; // High quality
+                stepsPerSlice = 3;
             }
 
             XeGTAO_MainPass
@@ -159,24 +159,35 @@ CS
         }
         else if (D_PASS == GTAOPasses::DenoiseSpatial )
         {
-            g_outAO[vDispatchId] =  XeGTAO_Denoise
+            // Each thread processes 2 horizontal pixels (XeGTAO optimization: shared gather reads)
+            // Dispatch must be at half-width to match
+            const uint2 pixCoordBase = vDispatchId * uint2( 2, 1 );
+            
+            // Early out here, no good way to have a non uniform size dispatch yet
+            if( pixCoordBase.x >= sGTAOConsts.ViewportSize.x || pixCoordBase.y >= sGTAOConsts.ViewportSize.y )
+                return;
+
+            lpfloat2 aoTerms = XeGTAO_Denoise
             (
-                vDispatchId,        // const uint2 pixCoordBase
-                sGTAOConsts,       // const GTAOConstants consts
-                g_srcWorkingAOTerm, // Texture2D<uint> sourceAOTerm
+                pixCoordBase,       // const uint2 pixCoordBase
+                sGTAOConsts,        // const GTAOConstants consts
+                g_srcWorkingAOTerm, // Texture2D sourceAOTerm
                 g_srcWorkingEdges,  // Texture2D<lpfloat> sourceEdges
-                PointClamp         // SamplerState texSampler
+                BilinearClamp          // SamplerState texSampler
             );
+
+            g_outAO[pixCoordBase]                = aoTerms.x;
+            g_outAO[pixCoordBase + uint2(1, 0)]  = aoTerms.y;
         }
         else if( D_PASS == GTAOPasses::DenoiseTemporal )
         {
+            float taaBlendAmount = sGTAOConsts.TAABlendAmount;
             if( g_srcWorkingEdges[ vDispatchId ] < 0.5 )
             {
-                g_outAO[vDispatchId] = g_srcWorkingAOTerm[ vDispatchId ].x;
-                return;
+                taaBlendAmount *= 0.5; // reduce blending for non-edge pixels to preserve more details
             }
 
-            g_outAO[vDispatchId] = Motion::TemporalFilter( vDispatchId.xy, g_srcWorkingAOTerm, g_prevAO, g_GTAOConsts.TAABlendAmount ).r;
+            g_outAO[vDispatchId] = Motion::TemporalFilter( vDispatchId.xy, g_srcWorkingAOTerm, g_prevAO, taaBlendAmount ).r;
         }
     }
 }

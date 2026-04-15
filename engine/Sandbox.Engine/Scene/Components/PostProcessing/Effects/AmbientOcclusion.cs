@@ -124,9 +124,9 @@ public sealed partial class AmbientOcclusion : BasePostProcess<AmbientOcclusion>
 		consts.EffectFalloffRange = GetWeighted( x => x.FalloffRange, 1.0f );
 		consts.DenoiseBlurBeta = 1.2f; // Used only on Spatial denoising
 
-		consts.NoiseIndex = DenoiseMode == DenoiseModes.Temporal ? Frame % 64 : 0;
+		consts.NoiseIndex = DenoiseMode == DenoiseModes.Temporal ? Frame : 0;
 		consts.ThinOccluderCompensation = ThinCompensation;
-		consts.FinalValuePower = GetWeighted( x => x.Intensity, 1.0f ) * 5.0f;
+		consts.FinalValuePower = GetWeighted( x => x.Intensity, 1.0f ) * 10.0f;
 
 		switch ( UserQuality )
 		{
@@ -134,10 +134,10 @@ public sealed partial class AmbientOcclusion : BasePostProcess<AmbientOcclusion>
 				consts.TAABlendAmount = 0.95f;
 				break;
 			case 2:
-				consts.TAABlendAmount = 0.9f;
+				consts.TAABlendAmount = 0.95f;
 				break;
 			case 3:
-				consts.TAABlendAmount = 0.8f;
+				consts.TAABlendAmount = 0.95f;
 				break;
 		}
 		return consts;
