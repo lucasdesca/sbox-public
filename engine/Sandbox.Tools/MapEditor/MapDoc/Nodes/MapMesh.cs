@@ -80,7 +80,10 @@ public class MapMesh : MapNode
 
 		// Construct data streams from our lists
 		var vertexPositions = mesh.Vertices.Select( v => v ).ToList();
-		var vertexTexCoords = mesh.Vertices.Select( v => Vector2.Zero ).ToList();
+		// use the mesh's per-vertex texture coordinates (zeros for meshes built without UVs - back-compat)
+		var vertexTexCoords = mesh.TexCoords.Count == mesh.Vertices.Count
+			? mesh.TexCoords.ToList()
+			: mesh.Vertices.Select( _ => Vector2.Zero ).ToList();
 		var faceIndices = new List<int>( mesh.Faces.Sum( f => f.Indices.Count ) ); // Array of indices specifying which vertices are used by each face
 		var faceVertexCounts = new List<int>( mesh.Faces.Count ); // Number of vertices used by each face
 		var faceMaterials = new List<IntPtr>( mesh.Faces.Count );
