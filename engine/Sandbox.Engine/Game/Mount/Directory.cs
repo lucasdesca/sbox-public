@@ -704,7 +704,8 @@ class SteamIntegration : ISteamIntegration
 	public BaseFileSystem GetFileSystem( long appid )
 	{
 		var dir = SteamNative.Apps.GetAppInstallDir( (int)appid );
-		if ( string.IsNullOrWhiteSpace( dir ) ) return null;
+		// Steam can report an install dir that isn't there
+		if ( !System.IO.Directory.Exists( dir ) ) return null;
 
 		// Read-only and rooted at the install dir - the mount can't write or escape above it.
 		return new LocalFileSystem( dir, makereadonly: true );
