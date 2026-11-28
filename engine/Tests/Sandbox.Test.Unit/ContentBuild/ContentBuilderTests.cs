@@ -49,6 +49,9 @@ public class ContentBuilderTests
 		/// <summary>Outputs record the compiled files they read, as the worker's do; off for an older compiler's.</summary>
 		public bool RecordsReads { get; set; } = true;
 
+		/// <summary>Makes what it declares itself, as an output of its own, as a compile outside a build does.</summary>
+		public bool MakesDeclared { get; set; }
+
 		public AssetKind Classify( string sourceExtension, out string outputExtension )
 		{
 			outputExtension = SoundOrNull( sourceExtension ) ?? sourceExtension + "_c";
@@ -65,7 +68,7 @@ public class ContentBuilderTests
 
 		public CompileResult Compile( CompileJob job, CancellationToken token )
 		{
-			if ( job.Mode == JobMode.Describe ) return Describer?.Invoke( job ) ?? Describe( job );
+			if ( job.Mode == JobMode.Describe ) return Describer?.Invoke( job ) ?? Describe( job, MakesDeclared );
 			if ( job.Mode == JobMode.Adopt ) return Adopter?.Invoke( job ) ?? Adopt( job, Transient );
 			Threads.Enqueue( Environment.CurrentManagedThreadId );
 
@@ -110,9 +113,9 @@ public class ContentBuilderTests
 
 		static ChildSource Declared( CompileJob job, string[] f ) => new( Resolve( job, f[1] ), 7, Encoding.UTF8.GetBytes( string.Join( ' ', f[2..] ) ) );
 
-		static CompileResult Describe( CompileJob job )
+		static CompileResult Describe( CompileJob job, bool makesDeclared )
 		{
-			var lines = File.ReadAllLines( job.Source ).Select( x => x.Split( ' ' ) ).ToList();
+			var lines = File.ReadAllLines( job.Source ).Select( x => x.Split( ' ' ) ).Where( x => !makesDeclared || x[0] != "declares" ).ToList();
 			var reads = lines.Where( x => x[0] is "reads" or "orders" or "declares" )
 				.Select( x => new PrerequisiteRead( Resolve( job, x[1] ), null, x[0] == "orders" ) ).ToList();
 			var sources = lines.Where( x => x[0] == "declares" ).Select( x => Declared( job, x ) ).ToList();
@@ -154,6 +157,7 @@ public class ContentBuilderTests
 						reads.Add( new PrerequisiteRead( Resolve( job, f[1] ), File.Exists( ordered ) ? ordered : null, true ) );
 						content.AppendLine( File.Exists( ordered ) ? "present" : "missing" );
 						break;
+					case "declares" when MakesDeclared: outputs.Add( Write( job, f[1] + "_c", string.Join( ' ', f[2..] ) ) ); break;
 					case "declares":
 						// Takes the built one, as a material its generated texture: none yet fails it
 						var declared = Resolve( job, f[1] ) + "_c";
@@ -307,6 +311,30 @@ public class ContentBuilderTests
 		Assert.IsTrue( report.Success, report.Log.ToString() );
 		CollectionAssert.Contains( report.Removed, "t.generated.vtex" );
 		Assert.IsFalse( fx.Exists( "t.generated.vtex_c" ) );
+	}
+
+	/// <summary>
+	/// A material that made its generated textures itself owns them. Once they're gone it's described again before it
+	/// compiles, so its textures build first and it builds once, without a describe miss.
+	/// </summary>
+	[TestMethod]
+	public void MaterialIsDescribedAgainWhenGeneratedTexturesItMadeAreGone()
+	{
+		using var fx = new Fixture();
+		fx.Write( "a.vmat", "declares t.generated.vtex red", "declares n.generated.vtex flat" );
+		fx.Compiler.MakesDeclared = true;
+		Assert.IsTrue( fx.Build().Success );
+		Assert.IsTrue( fx.Exists( "t.generated.vtex_c" ) );
+
+		File.Delete( Path.Combine( fx.Root, "t.generated.vtex_c" ) );
+		File.Delete( Path.Combine( fx.Root, "n.generated.vtex_c" ) );
+		fx.Compiler.MakesDeclared = false;
+
+		var report = fx.Build();
+		Assert.IsTrue( report.Success, report.Log.ToString() );
+		Assert.AreEqual( 0, report.DescribeMisses, report.Log.ToString() );
+		AssertJobs( report, "t.generated.vtex", "n.generated.vtex", "a.vmat" );
+		AssertJobs( fx.Build() );
 	}
 
 	/// <summary>

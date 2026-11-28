@@ -855,10 +855,20 @@ public static class ContentBuilder
 		(string Reason, List<(int Index, long Size, long Time)> InputRestamp) OwnDirtyCheck( Node node )
 		{
 			if ( node.Own is { } own && own.Record == node.Record && own.Settled == settled ) return (own.Reason, own.InputRestamp);
-			var reason = SelfDirty( node, out var inputRestamp ) ?? Shadowed( node );
+			var reason = SelfDirty( node, out var inputRestamp ) ?? Shadowed( node ) ?? LostGenerated( node );
 			if ( reason is not null ) inputRestamp = null;
 			node.Own = (node.Record, settled, reason, inputRestamp);
 			return (reason, inputRestamp);
+		}
+
+		/// <summary>
+		/// A generated texture it made itself is gone. It compiles anyway, and may now declare its textures as child
+		/// sources under other names, which only a fresh description finds before it compiles.
+		/// </summary>
+		static string LostGenerated( Node node )
+		{
+			var key = node.Record?.Outputs.Keys.FirstOrDefault( x => Path.GetFileName( x ).Contains( ".generated.", StringComparison.OrdinalIgnoreCase ) && node.Root.Resolve( x ) is not null && node.Root.Locate( x ) is null );
+			return key is null ? null : $"{key} is missing";
 		}
 
 		string OwnDirty( Node node ) => OwnDirtyCheck( node ).Reason;
