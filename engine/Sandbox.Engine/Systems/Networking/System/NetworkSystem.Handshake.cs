@@ -44,6 +44,7 @@ internal partial class NetworkSystem
 		Connection.Local = new LocalConnection( msg.Assigned.Id )
 		{
 			HandshakeId = msg.HandshakeId,
+			ServerLaunchMap = msg.Map,
 			State = Connection.ChannelState.LoadingServerInformation
 		};
 
@@ -139,35 +140,6 @@ internal partial class NetworkSystem
 		Networking.ServerName = msg.ServerName;
 		Networking.MapName = msg.MapName;
 		Networking.IsDedicatedServer = msg.IsDedicatedServer;
-
-		//
-		// Check any required mount for this map
-		//
-		var mountedMap = Mounting.MountUtility.IsMountPath( msg.MapName ) ? msg.MapName : msg.Map;
-		if ( Mounting.MountUtility.TryParse( mountedMap, out string ident ) )
-		{
-			// make sure the mount exists and is mounted
-			var mount = Mounting.Directory.Get( ident );
-			if ( mount is null || !mount.IsInstalled )
-			{
-				IGameInstanceDll.Current.Disconnect( $"Mount is not available: {ident}" );
-				Networking.Disconnect();
-				return;
-			}
-
-			LoadingScreen.Title = $"Mounting {mount.Title}";
-			await Mounting.Directory.Mount( ident );
-
-			// load the scene now so that it's ready by the time we get to snapshot
-			// which may/will reference procedural resources and could be out of order from the MapInstance doing it's thing (woof)
-			var scenefile = SceneFile.Load( mountedMap );
-			if ( scenefile is null )
-			{
-				IGameInstanceDll.Current.Disconnect( $"Map not found: {mountedMap}" );
-				Networking.Disconnect();
-				return;
-			}
-		}
 
 		//
 		// Tell me what I need
@@ -360,7 +332,7 @@ internal partial class NetworkSystem
 		if ( !source.IsHost )
 			return;
 
-		if ( Connection.Local is null )
+		if ( Connection.Local is not LocalConnection local )
 			throw new UnauthorizedAccessException();
 
 		if ( msg.HandshakeId != Connection.Local.HandshakeId )
@@ -373,6 +345,22 @@ internal partial class NetworkSystem
 
 		log.Trace( "Welcome!" );
 
+		var map = Mounting.MountUtility.IsMountPath( Networking.MapName ) ? Networking.MapName : local.ServerLaunchMap;
+		if ( Mounting.MountUtility.TryParse( map, out string ident ) )
+		{
+			// make sure the mount exists and is mounted
+			var mount = Mounting.Directory.Get( ident );
+			if ( mount is null || !mount.IsInstalled )
+			{
+				IGameInstanceDll.Current.Disconnect( $"Mount is not available: {ident}" );
+				Networking.Disconnect();
+				return;
+			}
+
+			LoadingScreen.Title = $"Mounting {mount.Title}";
+			await Mounting.Directory.Mount( ident );
+		}
+
 		LoadingScreen.Title = "Loading Network Tables";
 		if ( !await IGameInstanceDll.Current?.LoadNetworkTables( this ) )
 		{
@@ -383,6 +371,14 @@ internal partial class NetworkSystem
 
 		LoadingScreen.Title = "Init Game System";
 		await InitializeGameSystemAsync();
+
+		// Mounted scenes can build physics from game resources and create assets referenced by the snapshot.
+		if ( ident is not null && SceneFile.Load( map ) is null )
+		{
+			IGameInstanceDll.Current.Disconnect( $"Map not found: {map}" );
+			Networking.Disconnect();
+			return;
+		}
 
 		log.Trace( $"Game Network System: {GameSystem}" );
 

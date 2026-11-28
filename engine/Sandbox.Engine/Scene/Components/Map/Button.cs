@@ -314,7 +314,7 @@ public sealed class Button : Component, Component.IPressable
 			return;
 
 		// Normalize the last use time to the amount of time to animate
-		var time = LastUse.Relative.Remap( 0.0f, AnimationTime, 0.0f, 1.0f );
+		var time = AnimationTime > 0 ? LastUse.Relative.Remap( 0.0f, AnimationTime, 0.0f, 1.0f ) : 1.0f;
 
 		// Evaluate our animation curve
 		var curve = AnimationCurve.Evaluate( time );

@@ -865,7 +865,7 @@ sealed public partial class Rigidbody : Component, Component.ExecuteInEditor, IG
 	/// Returns true if this rigidbody is a networked proxy that should simulate physics
 	/// locally instead of being driven by network transform updates.
 	/// </summary>
-	bool ShouldSimulatePhysics =>
+	internal bool ShouldSimulatePhysics =>
 		!IsProxy ||
 		GameObject.NetworkMode != NetworkMode.Object ||
 		GameObject.Network?.Flags.Contains( NetworkFlags.NoTransformSync ) == true;

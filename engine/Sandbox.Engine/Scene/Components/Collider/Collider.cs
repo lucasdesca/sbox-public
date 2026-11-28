@@ -406,7 +406,7 @@ public abstract partial class Collider : Component, Component.ExecuteInEditor, C
 				}
 				else
 				{
-					body.BodyType = Rigidbody.MotionEnabled ? PhysicsBodyType.Dynamic : PhysicsBodyType.Keyframed;
+					body.BodyType = Rigidbody.MotionEnabled && Rigidbody.ShouldSimulatePhysics ? PhysicsBodyType.Dynamic : PhysicsBodyType.Keyframed;
 					body.NavmeshBodyTypeOverride = null;
 				}
 			}

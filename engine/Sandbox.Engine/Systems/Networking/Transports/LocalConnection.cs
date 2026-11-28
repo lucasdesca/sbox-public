@@ -5,6 +5,8 @@ namespace Sandbox.Network;
 /// </summary>
 internal class LocalConnection : Connection
 {
+	internal string ServerLaunchMap { get; init; }
+
 	public override string Address => "local";
 	public override bool IsHost => Networking.System?.IsHost ?? true;
 
